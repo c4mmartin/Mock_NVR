@@ -225,6 +225,17 @@ async def index(request: web.Request) -> web.Response:
         have_h264 = bool(state.rtsp_streamers) and (f"{cam_id}:h264" in state.rtsp_streamers)
         have_h265 = bool(state.rtsp_streamers) and (f"{cam_id}:h265" in state.rtsp_streamers)
 
+        rtsp_h264_td = (
+            f"<td><code>rtsp://{rtsp_host}:{state.rtsp_port}/cam{cam_id}_h264</code></td>"
+            if have_h264
+            else "<td><em>disabled</em></td>"
+        )
+        rtsp_h265_td = (
+            f"<td><code>rtsp://{rtsp_host}:{state.rtsp_port}/cam{cam_id}_h265</code></td>"
+            if have_h265
+            else "<td><em>disabled</em></td>"
+        )
+
         rows.append(
             f"<tr>"
             f"<td>{cam_id}</td>"
@@ -237,17 +248,9 @@ async def index(request: web.Request) -> web.Response:
             f"<td><code>{http_base_connected}{mjpeg_rel}</code>"
             + (f"<br/><small>adv: <code>{http_base_advertised}{mjpeg_rel}</code></small>" if http_base_advertised else "")
             + "</td>"
-            + (
-                f"<td><code>rtsp://{rtsp_host}:{state.rtsp_port}/cam{cam_id}_h264</code></td>"
-                if have_h264
-                else "<td><em>disabled</em></td>"
-            )
-            + (
-                f"<td><code>rtsp://{rtsp_host}:{state.rtsp_port}/cam{cam_id}_h265</code></td>"
-                if have_h265
-                else "<td><em>disabled</em></td>"
-            )
-            f"</tr>"
+            + rtsp_h264_td
+            + rtsp_h265_td
+            + "</tr>"
         )
 
     html = f"""<!doctype html>

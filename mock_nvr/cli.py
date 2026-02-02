@@ -76,6 +76,12 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         default="IPADDR",
         help="Host/IP to print in URLs (default: IPADDR placeholder)",
     )
+    parser.add_argument(
+        "--resolution",
+        type=str,
+        default="",
+        help="Preset resolution: sd (640x480), hd/720p (1280x720), fhd/1080p (1920x1080), 4k/2160p (3840x2160). Overrides --width/--height.",
+    )
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--fps", type=int, default=10)
@@ -96,8 +102,8 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--rtsp-codecs",
         type=str,
-        default="h264,h265",
-        help="Comma-separated RTSP codecs to publish: h264, h265 (default: h264,h265). Use 'h264' to cut bandwidth.",
+        default="h264",
+        help="Comma-separated RTSP codecs to publish: h264, h265 (default: h264). Use 'h264,h265' to enable both.",
     )
     parser.add_argument(
         "--rtsp-gop-seconds",
@@ -380,6 +386,27 @@ def os_cpu_count() -> int | None:
         return None
 
 
+def _apply_resolution_preset(args: argparse.Namespace) -> None:
+    """Apply --resolution presets by overriding args.width/args.height."""
+
+    res = (getattr(args, "resolution", "") or "").strip().lower()
+    if not res:
+        return
+
+    presets = {
+        "sd": (640, 480),
+        "hd": (1280, 720),
+        "720p": (1280, 720),
+        "fhd": (1920, 1080),
+        "1080p": (1920, 1080),
+        "4k": (3840, 2160),
+        "2160p": (3840, 2160),
+    }
+    if res not in presets:
+        raise SystemExit(f"Unknown --resolution '{res}'. Use sd, hd/720p, fhd/1080p, 4k/2160p")
+    args.width, args.height = presets[res]
+
+
 async def run(args: argparse.Namespace) -> int:
     configure_logging(
         name="mock_nvr",
@@ -389,6 +416,8 @@ async def run(args: argparse.Namespace) -> int:
         retention_days=(args.log_retention_days or None),
     )
     log = get_logger()
+
+    _apply_resolution_preset(args)
 
     if not _ffmpeg_exists():
         raise SystemExit("ffmpeg not found on PATH. Install with: brew install ffmpeg")
@@ -569,6 +598,9 @@ def main(argv: list[str] | None = None) -> int:
             backups=args.log_backups,
             retention_days=(args.log_retention_days or None),
         )
+
+        _apply_resolution_preset(args)
+
         supervisor = Supervisor(
             total_cameras=args.cameras,
             camera_start=args.camera_start,

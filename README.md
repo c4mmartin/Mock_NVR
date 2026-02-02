@@ -11,6 +11,15 @@ Per camera:
 - RTSP (H.264): `rtsp://<host>:<rtsp_port>/cam<id>_h264`
 - RTSP (H.265): `rtsp://<host>:<rtsp_port>/cam<id>_h265`
 
+## Common resolutions
+
+Use `--resolution` to pick a common size (overrides `--width`/`--height`):
+
+- SD: `--resolution sd` (640x480)
+- HD: `--resolution hd` / `--resolution 720p` (1280x720)
+- Full HD: `--resolution fhd` / `--resolution 1080p` (1920x1080)
+- 4K: `--resolution 4k` / `--resolution 2160p` (3840x2160)
+
 MJPEG tuning (useful for constrained clients like some smart TVs):
 
 - Slow MJPEG down: `http://<host>:<http_port>/cam/<id>/mjpeg?fps=1` (or `fps=0.5`)
