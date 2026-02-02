@@ -259,7 +259,25 @@ class Supervisor:
 
     async def handle_index(self, request: web.Request) -> web.Response:
         scheme = request.scheme
-        host = request.url.host or request.host.split(":")[0]
+
+        def _split_host_port(authority: str) -> tuple[str, str | None]:
+            if not authority:
+                return "", None
+            if authority.startswith("["):
+                end = authority.find("]")
+                if end != -1:
+                    h = authority[1:end]
+                    rest = authority[end + 1 :]
+                    if rest.startswith(":"):
+                        return h, rest[1:] or None
+                    return h, None
+            if ":" in authority:
+                h, p = authority.rsplit(":", 1)
+                if h and p.isdigit():
+                    return h, p
+            return authority, None
+
+        host, _ = _split_host_port(request.host)
 
         def _host_for_url(h: str) -> str:
             # Basic IPv6 bracket handling.

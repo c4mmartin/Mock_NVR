@@ -7,6 +7,36 @@ from aiohttp import web
 from .models import AppState
 
 
+def _split_host_port(authority: str) -> tuple[str, str | None]:
+    """Split an HTTP Host header / authority into host and port.
+
+    Handles:
+    - "example.com"
+    - "example.com:8100"
+    - "[::1]:8100"
+    """
+
+    if not authority:
+        return "", None
+
+    # IPv6 in brackets.
+    if authority.startswith("["):
+        end = authority.find("]")
+        if end != -1:
+            host = authority[1:end]
+            rest = authority[end + 1 :]
+            if rest.startswith(":"):
+                return host, rest[1:] or None
+            return host, None
+
+    if ":" in authority:
+        host, port = authority.rsplit(":", 1)
+        if host and port.isdigit():
+            return host, port
+
+    return authority, None
+
+
 async def healthz(_: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
@@ -92,7 +122,7 @@ async def index(request: web.Request) -> web.Response:
     # purposes and RTSP URLs.
     http_base = f"{request.scheme}://{request.host}"
 
-    browser_host = request.url.host or request.host.split(":")[0]
+    browser_host, _ = _split_host_port(request.host)
     advertised = getattr(state, "advertise_host", "IPADDR") or "IPADDR"
     rtsp_host = advertised if advertised and advertised != "IPADDR" else (browser_host or "IPADDR")
 
