@@ -1,0 +1,4 @@
+aiohttp==3.9.5
+Pillow==10.4.0
+pyyaml==6.0.3
+structlog==25.5.0

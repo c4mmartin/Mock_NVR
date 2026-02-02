@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mock-nvr"
+version = "0.1.0"
+description = "Quick-and-dirty Python mock NVR that generates fake multi-camera video."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "aiohttp>=3.9.5",
+  "Pillow>=10.4.0",
+  "PyYAML>=6.0.3",
+  "structlog>=25.5.0",
+]
+
+[project.scripts]
+mock-nvr = "mock_nvr.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mock_nvr*"]
