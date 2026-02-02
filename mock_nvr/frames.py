@@ -38,6 +38,9 @@ class FrameSource:
 
         self._font = self._load_font()
 
+        # Default JPEG quality used by HTTP snapshot/MJPEG.
+        self._jpeg_quality_default = 80
+
     def _load_font(self):
         # Degrade gracefully on macOS/Linux; PIL default font is fine.
         try:
@@ -117,12 +120,20 @@ class FrameSource:
         return img.tobytes()
 
     def _render_rgb_sync(self) -> bytes:
+        # Render (and update animation state) under the lock.
         with self._lock:
             rgb = self._render_rgb()
+
+        # Encode JPEG outside the lock (can be CPU-heavy).
+        jpg = self._encode_jpeg_sync(rgb, self._jpeg_quality_default)
+
+        # Publish the new frame atomically.
+        with self._lock:
             self._latest_rgb = rgb
-            self._latest_jpeg = None
+            self._latest_jpeg = jpg
             self._latest_frame_monotonic = time.monotonic()
             self._frames_rendered += 1
+            self._jpeg_encodes += 1
             return rgb
 
     def _encode_jpeg_sync(self, rgb: bytes, quality: int) -> bytes:
@@ -195,13 +206,10 @@ class FrameSource:
             cached = self._latest_jpeg
             rgb = self._latest_rgb
 
-        if cached is not None:
+        if cached is not None and quality == self._jpeg_quality_default:
             return cached
         if rgb is None:
             rgb = await self.get_rgb_frame()
 
-        jpg = await asyncio.to_thread(self._encode_jpeg_sync, rgb, quality)
-        with self._lock:
-            self._latest_jpeg = jpg
-            self._jpeg_encodes += 1
-        return jpg
+        # Non-default quality: encode on demand.
+        return await asyncio.to_thread(self._encode_jpeg_sync, rgb, quality)

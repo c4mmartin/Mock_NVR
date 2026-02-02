@@ -161,10 +161,14 @@ async def rtsp_pump(state: AppState):
         next_tick = time.monotonic()
         while not state.stop_event.is_set():
             rgb = await frame_source.get_rgb_frame()
-            for streamer in targets:
-                if streamer.proc is None:
-                    streamer.start()
-                await asyncio.to_thread(streamer.write_frame, rgb)
+
+            def _write_all():
+                for streamer in targets:
+                    if streamer.proc is None:
+                        streamer.start()
+                    streamer.write_frame(rgb)
+
+            await asyncio.to_thread(_write_all)
 
             next_tick += interval
             sleep_for = next_tick - time.monotonic()
