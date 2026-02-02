@@ -94,6 +94,8 @@ class RtspStreamer:
             return
         try:
             self.proc.stdin.write(rgb_bytes)
+            # Ensure frames reach ffmpeg promptly (stdin is a buffered file object).
+            self.proc.stdin.flush()
         except BrokenPipeError:
             # Client disconnects / server reset -> allow restart
             self.stop()

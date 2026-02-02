@@ -5,6 +5,7 @@ import asyncio
 from aiohttp import web
 
 from .models import AppState
+from .logging import get_logger
 
 
 def _split_host_port(authority: str) -> tuple[str, str | None]:
@@ -59,6 +60,15 @@ async def mjpeg_stream(request: web.Request) -> web.StreamResponse:
     cam_id = int(request.match_info["cam_id"])
     state: AppState = request.app["state"]
 
+    get_logger().info(
+        "http_mjpeg_open",
+        cam_id=cam_id,
+        remote=getattr(request, "remote", None),
+        host=request.host,
+        path=request.path,
+        ua=request.headers.get("User-Agent"),
+    )
+
     if cam_id not in state.cameras:
         raise web.HTTPNotFound(text="Unknown camera")
 
@@ -71,6 +81,8 @@ async def mjpeg_stream(request: web.Request) -> web.StreamResponse:
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
             "Expires": "0",
+            # Helps when running behind reverse proxies that buffer responses.
+            "X-Accel-Buffering": "no",
         },
     )
     await resp.prepare(request)
@@ -89,6 +101,13 @@ async def mjpeg_stream(request: web.Request) -> web.StreamResponse:
             )
             await resp.write(jpg)
             await resp.write(b"\r\n")
+
+            # Backpressure / flush (aiohttp API may vary by version).
+            try:
+                await resp.drain()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
             await asyncio.sleep(frame_interval)
     except asyncio.CancelledError:
         raise
@@ -107,6 +126,15 @@ async def mjpeg_stream(request: web.Request) -> web.StreamResponse:
 async def snapshot(request: web.Request) -> web.Response:
     cam_id = int(request.match_info["cam_id"])
     state: AppState = request.app["state"]
+
+    get_logger().info(
+        "http_snapshot",
+        cam_id=cam_id,
+        remote=getattr(request, "remote", None),
+        host=request.host,
+        path=request.path,
+        ua=request.headers.get("User-Agent"),
+    )
 
     if cam_id not in state.cameras:
         raise web.HTTPNotFound(text="Unknown camera")

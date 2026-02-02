@@ -275,6 +275,14 @@ class Supervisor:
         if spec is None:
             raise web.HTTPNotFound(text="Unknown camera")
 
+        get_logger().info(
+            "supervisor_snapshot_proxy",
+            cam_id=cam_id,
+            worker=spec.index,
+            remote=getattr(request, "remote", None),
+            host=request.host,
+        )
+
         base = f"http://127.0.0.1:{spec.http_port}"
         return await self._proxy_bytes(url=f"{base}/cam/{cam_id}/snapshot.jpg", content_type="image/jpeg")
 
@@ -283,6 +291,14 @@ class Supervisor:
         spec = self._find_worker_for_cam(cam_id)
         if spec is None:
             raise web.HTTPNotFound(text="Unknown camera")
+
+        get_logger().info(
+            "supervisor_mjpeg_proxy_open",
+            cam_id=cam_id,
+            worker=spec.index,
+            remote=getattr(request, "remote", None),
+            host=request.host,
+        )
 
         upstream = f"http://127.0.0.1:{spec.http_port}/cam/{cam_id}/mjpeg"
 
@@ -294,6 +310,7 @@ class Supervisor:
                 "Cache-Control": "no-cache, no-store, must-revalidate",
                 "Pragma": "no-cache",
                 "Expires": "0",
+                "X-Accel-Buffering": "no",
             },
         )
 
@@ -311,6 +328,10 @@ class Supervisor:
 
                     async for chunk in upstream_resp.content.iter_chunked(64 * 1024):
                         await resp.write(chunk)
+                        try:
+                            await resp.drain()  # type: ignore[attr-defined]
+                        except Exception:
+                            pass
         except asyncio.CancelledError:
             raise
         except (ConnectionResetError, BrokenPipeError):
