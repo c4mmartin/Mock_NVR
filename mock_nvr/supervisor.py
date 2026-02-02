@@ -277,7 +277,11 @@ class Supervisor:
                     return h, p
             return authority, None
 
-        host, _ = _split_host_port(request.host)
+        req_host, _ = _split_host_port(request.host)
+
+        # If the user explicitly set an advertise host (often an IP), prefer that
+        # so the dashboard consistently points at the intended interface.
+        host = self.advertise_host if self.advertise_host and self.advertise_host != "IPADDR" else req_host
 
         def _host_for_url(h: str) -> str:
             # Basic IPv6 bracket handling.

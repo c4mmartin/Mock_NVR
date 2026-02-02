@@ -117,14 +117,14 @@ async def snapshot(request: web.Request) -> web.Response:
 
 async def index(request: web.Request) -> web.Response:
     state: AppState = request.app["state"]
-    # For HTTP, prefer the host the browser actually used (handles multi-NIC,
-    # hostnames, reverse proxies, etc). We still keep advertise_host for display
-    # purposes and RTSP URLs.
-    http_base = f"{request.scheme}://{request.host}"
-
     browser_host, _ = _split_host_port(request.host)
     advertised = getattr(state, "advertise_host", "IPADDR") or "IPADDR"
-    rtsp_host = advertised if advertised and advertised != "IPADDR" else (browser_host or "IPADDR")
+
+    # For display: if advertise_host is explicitly set, use it for both HTTP and RTSP
+    # URLs (common when the host has multiple NICs and you want a specific IP).
+    display_host = advertised if advertised and advertised != "IPADDR" else (browser_host or "IPADDR")
+    http_base = f"{request.scheme}://{display_host}:{state.http_port}"
+    rtsp_host = display_host
 
     rows = []
     for cam_id in sorted(state.cameras.keys()):
