@@ -120,26 +120,20 @@ async def index(request: web.Request) -> web.Response:
     browser_host, _ = _split_host_port(request.host)
     advertised = getattr(state, "advertise_host", "IPADDR") or "IPADDR"
 
-    # Prefer the actual interface IP that accepted this connection. This avoids
-    # wrong-IP copy/paste on multi-NIC hosts (DNS may resolve to a different NIC).
-    sock_host: str | None = None
-    sock_port: int | None = None
-    try:
-        sockname = request.transport.get_extra_info("sockname") if request.transport else None
-        if isinstance(sockname, (tuple, list)) and len(sockname) >= 2:
-            sock_host = str(sockname[0])
-            sock_port = int(sockname[1])
-    except Exception:
-        sock_host = None
-        sock_port = None
+    # What the client actually used to reach this server (best for copy/paste).
+    # request.host already includes the port when present.
+    http_base_connected = f"{request.scheme}://{request.host}"
 
-    http_display_host = sock_host or browser_host or "IPADDR"
-    http_display_port = sock_port or state.http_port or 80
-    http_base = f"{request.scheme}://{http_display_host}:{http_display_port}"
+    # Also compute an advertised HTTP base for environments where you want to
+    # publish a specific IP/hostname.
+    http_base_advertised = (
+        f"{request.scheme}://{advertised}:{state.http_port}"
+        if advertised and advertised != "IPADDR"
+        else None
+    )
 
-    # For RTSP, allow explicit override (since clients may not be on the same
-    # network as the HTTP browser).
-    rtsp_host = advertised if advertised and advertised != "IPADDR" else http_display_host
+    # For RTSP, allow explicit override (clients may differ from HTTP browser).
+    rtsp_host = advertised if advertised and advertised != "IPADDR" else (browser_host or "IPADDR")
 
     rows = []
     for cam_id in sorted(state.cameras.keys()):
@@ -150,8 +144,12 @@ async def index(request: web.Request) -> web.Response:
             f"<td>{cam_id}</td>"
             f"<td><a href='{snap_rel}'>snapshot.jpg</a></td>"
             f"<td><a href='{mjpeg_rel}'>mjpeg</a></td>"
-            f"<td><code>{http_base}{snap_rel}</code></td>"
-            f"<td><code>{http_base}{mjpeg_rel}</code></td>"
+            f"<td><code>{http_base_connected}{snap_rel}</code>"
+            + (f"<br/><small>adv: <code>{http_base_advertised}{snap_rel}</code></small>" if http_base_advertised else "")
+            + "</td>"
+            f"<td><code>{http_base_connected}{mjpeg_rel}</code>"
+            + (f"<br/><small>adv: <code>{http_base_advertised}{mjpeg_rel}</code></small>" if http_base_advertised else "")
+            + "</td>"
             f"<td><code>rtsp://{rtsp_host}:{state.rtsp_port}/cam{cam_id}_h264</code></td>"
             f"<td><code>rtsp://{rtsp_host}:{state.rtsp_port}/cam{cam_id}_h265</code></td>"
             f"</tr>"
@@ -174,8 +172,8 @@ async def index(request: web.Request) -> web.Response:
 <body>
   <h1>mock_nvr</h1>
     <p>HTTP: snapshots + MJPEG. RTSP: MediamTX + ffmpeg publishers (H.264/H.265).</p>
-        <p><b>Tip:</b> HTTP URLs below use the host you connected with (<code>{request.host}</code>).</p>
-        <p><b>Tip:</b> RTSP URLs use <code>{rtsp_host}</code> (set <code>--advertise-host</code> to override).</p>
+        <p><b>Tip:</b> The primary HTTP URLs below use the exact host you connected with (<code>{request.host}</code>).</p>
+        <p><b>Tip:</b> RTSP URLs use <code>{rtsp_host}</code> (set <code>--advertise-host</code> if you want a specific IP/hostname printed).</p>
   <table>
     <thead>
             <tr><th>Cam</th><th>Snapshot</th><th>MJPEG</th><th>Snapshot URL</th><th>MJPEG URL</th><th>RTSP H.264</th><th>RTSP H.265</th></tr>

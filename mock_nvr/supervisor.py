@@ -388,6 +388,18 @@ class Supervisor:
                 "</tr>"
             )
 
+        cam_rows = []
+        for cam_id in range(self.camera_start, self.camera_start + self.total_cameras):
+            snap = f"/cam/{cam_id}/snapshot.jpg"
+            mj = f"/cam/{cam_id}/mjpeg"
+            cam_rows.append(
+                "<tr>"
+                f"<td>{cam_id}</td>"
+                f"<td><a href='{snap}'>snapshot.jpg</a></td>"
+                f"<td><a href='{mj}'>mjpeg</a></td>"
+                "</tr>"
+            )
+
         html = f"""<!doctype html>
 <html>
 <head>
@@ -410,6 +422,16 @@ class Supervisor:
         <li><code>/cam/&lt;id&gt;/snapshot.jpg</code></li>
         <li><code>/cam/&lt;id&gt;/mjpeg</code></li>
     </ul>
+    <h2>Proxied cameras</h2>
+    <table>
+        <thead>
+            <tr><th>Cam</th><th>Snapshot</th><th>MJPEG</th></tr>
+        </thead>
+        <tbody>
+            {''.join(cam_rows)}
+        </tbody>
+    </table>
+    <h2>Workers</h2>
   <table>
     <thead>
       <tr><th>Worker</th><th>Cameras</th><th>UI</th><th>Stats</th></tr>
