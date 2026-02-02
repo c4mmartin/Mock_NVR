@@ -251,6 +251,78 @@ class Supervisor:
             "workers": worker_stats,
         }
 
+    def _find_worker_for_cam(self, cam_id: int) -> WorkerSpec | None:
+        for spec in self.worker_specs:
+            lo = spec.camera_start
+            hi = spec.camera_start + spec.cameras - 1
+            if lo <= cam_id <= hi:
+                return spec
+        return None
+
+    async def _proxy_bytes(self, *, url: str, content_type: str | None = None) -> web.Response:
+        async with ClientSession() as session:
+            async with session.get(url, timeout=5) as resp:
+                if resp.status == 404:
+                    raise web.HTTPNotFound(text="Not found")
+                resp.raise_for_status()
+                body = await resp.read()
+                ct = content_type or resp.headers.get("Content-Type")
+                return web.Response(body=body, content_type=ct)
+
+    async def handle_snapshot_proxy(self, request: web.Request) -> web.Response:
+        cam_id = int(request.match_info["cam_id"])
+        spec = self._find_worker_for_cam(cam_id)
+        if spec is None:
+            raise web.HTTPNotFound(text="Unknown camera")
+
+        base = f"http://127.0.0.1:{spec.http_port}"
+        return await self._proxy_bytes(url=f"{base}/cam/{cam_id}/snapshot.jpg", content_type="image/jpeg")
+
+    async def handle_mjpeg_proxy(self, request: web.Request) -> web.StreamResponse:
+        cam_id = int(request.match_info["cam_id"])
+        spec = self._find_worker_for_cam(cam_id)
+        if spec is None:
+            raise web.HTTPNotFound(text="Unknown camera")
+
+        upstream = f"http://127.0.0.1:{spec.http_port}/cam/{cam_id}/mjpeg"
+
+        resp = web.StreamResponse(
+            status=200,
+            reason="OK",
+            headers={
+                # Upstream content-type is multipart; we keep it.
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
+        try:
+            async with ClientSession() as session:
+                async with session.get(upstream, timeout=None) as upstream_resp:
+                    if upstream_resp.status == 404:
+                        raise web.HTTPNotFound(text="Not found")
+                    upstream_resp.raise_for_status()
+                    ct = upstream_resp.headers.get("Content-Type")
+                    if ct:
+                        resp.headers["Content-Type"] = ct
+
+                    await resp.prepare(request)
+
+                    async for chunk in upstream_resp.content.iter_chunked(64 * 1024):
+                        await resp.write(chunk)
+        except asyncio.CancelledError:
+            raise
+        except (ConnectionResetError, BrokenPipeError):
+            pass
+        finally:
+            try:
+                await resp.write_eof()
+            except Exception:
+                pass
+
+        return resp
+
     async def handle_healthz(self, _: web.Request) -> web.Response:
         return web.json_response({"ok": True})
 
@@ -279,9 +351,21 @@ class Supervisor:
 
         req_host, _ = _split_host_port(request.host)
 
-        # If the user explicitly set an advertise host (often an IP), prefer that
-        # so the dashboard consistently points at the intended interface.
-        host = self.advertise_host if self.advertise_host and self.advertise_host != "IPADDR" else req_host
+        sock_host: str | None = None
+        try:
+            sockname = request.transport.get_extra_info("sockname") if request.transport else None
+            if isinstance(sockname, (tuple, list)) and len(sockname) >= 1:
+                sock_host = str(sockname[0])
+        except Exception:
+            sock_host = None
+
+        # If the user explicitly set an advertise host (often an IP), prefer that.
+        # Otherwise, prefer the local interface IP that accepted this request.
+        host = (
+            self.advertise_host
+            if self.advertise_host and self.advertise_host != "IPADDR"
+            else (sock_host or req_host)
+        )
 
         def _host_for_url(h: str) -> str:
             # Basic IPv6 bracket handling.
@@ -321,6 +405,11 @@ class Supervisor:
 <body>
   <h1>mock_nvr supervisor</h1>
   <p>Aggregated stats: <a href='/stats'>/stats</a></p>
+    <p>Camera endpoints are proxied through the supervisor:</p>
+    <ul>
+        <li><code>/cam/&lt;id&gt;/snapshot.jpg</code></li>
+        <li><code>/cam/&lt;id&gt;/mjpeg</code></li>
+    </ul>
   <table>
     <thead>
       <tr><th>Worker</th><th>Cameras</th><th>UI</th><th>Stats</th></tr>
@@ -339,4 +428,6 @@ class Supervisor:
         app.router.add_get("/", self.handle_index)
         app.router.add_get("/healthz", self.handle_healthz)
         app.router.add_get("/stats", self.handle_stats)
+        app.router.add_get("/cam/{cam_id:\\d+}/snapshot.jpg", self.handle_snapshot_proxy)
+        app.router.add_get("/cam/{cam_id:\\d+}/mjpeg", self.handle_mjpeg_proxy)
         return app

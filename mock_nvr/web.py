@@ -120,11 +120,26 @@ async def index(request: web.Request) -> web.Response:
     browser_host, _ = _split_host_port(request.host)
     advertised = getattr(state, "advertise_host", "IPADDR") or "IPADDR"
 
-    # For display: if advertise_host is explicitly set, use it for both HTTP and RTSP
-    # URLs (common when the host has multiple NICs and you want a specific IP).
-    display_host = advertised if advertised and advertised != "IPADDR" else (browser_host or "IPADDR")
-    http_base = f"{request.scheme}://{display_host}:{state.http_port}"
-    rtsp_host = display_host
+    # Prefer the actual interface IP that accepted this connection. This avoids
+    # wrong-IP copy/paste on multi-NIC hosts (DNS may resolve to a different NIC).
+    sock_host: str | None = None
+    sock_port: int | None = None
+    try:
+        sockname = request.transport.get_extra_info("sockname") if request.transport else None
+        if isinstance(sockname, (tuple, list)) and len(sockname) >= 2:
+            sock_host = str(sockname[0])
+            sock_port = int(sockname[1])
+    except Exception:
+        sock_host = None
+        sock_port = None
+
+    http_display_host = sock_host or browser_host or "IPADDR"
+    http_display_port = sock_port or state.http_port or 80
+    http_base = f"{request.scheme}://{http_display_host}:{http_display_port}"
+
+    # For RTSP, allow explicit override (since clients may not be on the same
+    # network as the HTTP browser).
+    rtsp_host = advertised if advertised and advertised != "IPADDR" else http_display_host
 
     rows = []
     for cam_id in sorted(state.cameras.keys()):

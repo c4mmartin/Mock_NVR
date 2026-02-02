@@ -239,6 +239,11 @@ python -m mock_nvr supervise --cameras 8 --workers 2 --supervisor-http-port 8090
 - Supervisor UI: `http://localhost:8090/`
 - Aggregated stats: `http://localhost:8090/stats`
 
+In supervisor mode, the supervisor also proxies camera endpoints so you can hit them via the supervisor port (you don't need to know which worker owns a given camera ID):
+
+- Snapshot: `http://<host>:8090/cam/<id>/snapshot.jpg`
+- MJPEG: `http://<host>:8090/cam/<id>/mjpeg`
+
 ## Notes
 
 - This is intentionally simple and “dumb”: it’s meant to trick NVR/camera drivers into thinking a live camera exists.
