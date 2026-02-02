@@ -257,10 +257,21 @@ class Supervisor:
     async def handle_stats(self, _: web.Request) -> web.Response:
         return web.json_response(await self._aggregate_stats())
 
-    async def handle_index(self, _: web.Request) -> web.Response:
+    async def handle_index(self, request: web.Request) -> web.Response:
+        scheme = request.scheme
+        host = request.url.host or request.host.split(":")[0]
+
+        def _host_for_url(h: str) -> str:
+            # Basic IPv6 bracket handling.
+            if ":" in h and not h.startswith("["):
+                return f"[{h}]"
+            return h
+
+        host_url = _host_for_url(host)
+
         rows = []
         for spec in self.worker_specs:
-            base = f"http://127.0.0.1:{spec.http_port}"
+            base = f"{scheme}://{host_url}:{spec.http_port}"
             rng = f"{spec.camera_start}..{spec.camera_start + spec.cameras - 1}"
             rows.append(
                 "<tr>"

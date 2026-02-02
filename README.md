@@ -187,6 +187,8 @@ Test RTSP:
 - H.264: `ffplay -rtsp_transport tcp rtsp://localhost:8554/cam1_h264`
 - H.265: `ffplay -rtsp_transport tcp rtsp://localhost:8554/cam1_h265`
 
+VLC tip: if playback fails, force RTSP over TCP (some networks block UDP RTP). The auto-started MediamTX config allows both TCP and UDP.
+
 ## Scaling / avoiding dropouts
 
 This project renders frames (Pillow) in background tasks and caches the latest frame per camera.

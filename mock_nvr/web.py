@@ -87,11 +87,14 @@ async def snapshot(request: web.Request) -> web.Response:
 
 async def index(request: web.Request) -> web.Response:
     state: AppState = request.app["state"]
-    browser_host = request.host.split(":")[0]
+    # For HTTP, prefer the host the browser actually used (handles multi-NIC,
+    # hostnames, reverse proxies, etc). We still keep advertise_host for display
+    # purposes and RTSP URLs.
+    http_base = f"{request.scheme}://{request.host}"
+
+    browser_host = request.url.host or request.host.split(":")[0]
     advertised = getattr(state, "advertise_host", "IPADDR") or "IPADDR"
-    http_port = getattr(state, "http_port", None)
-    if not http_port:
-        http_port = request.url.port or 80
+    rtsp_host = advertised if advertised and advertised != "IPADDR" else (browser_host or "IPADDR")
 
     rows = []
     for cam_id in sorted(state.cameras.keys()):
@@ -102,10 +105,10 @@ async def index(request: web.Request) -> web.Response:
             f"<td>{cam_id}</td>"
             f"<td><a href='{snap_rel}'>snapshot.jpg</a></td>"
             f"<td><a href='{mjpeg_rel}'>mjpeg</a></td>"
-            f"<td><code>http://{advertised}:{http_port}{snap_rel}</code></td>"
-            f"<td><code>http://{advertised}:{http_port}{mjpeg_rel}</code></td>"
-            f"<td><code>rtsp://{advertised}:{state.rtsp_port}/cam{cam_id}_h264</code></td>"
-            f"<td><code>rtsp://{advertised}:{state.rtsp_port}/cam{cam_id}_h265</code></td>"
+            f"<td><code>{http_base}{snap_rel}</code></td>"
+            f"<td><code>{http_base}{mjpeg_rel}</code></td>"
+            f"<td><code>rtsp://{rtsp_host}:{state.rtsp_port}/cam{cam_id}_h264</code></td>"
+            f"<td><code>rtsp://{rtsp_host}:{state.rtsp_port}/cam{cam_id}_h265</code></td>"
             f"</tr>"
         )
 
@@ -126,7 +129,8 @@ async def index(request: web.Request) -> web.Response:
 <body>
   <h1>mock_nvr</h1>
     <p>HTTP: snapshots + MJPEG. RTSP: MediamTX + ffmpeg publishers (H.264/H.265).</p>
-    <p><b>Tip:</b> URLs below use <code>{advertised}</code>. Replace it with your LAN IP. Browser host is <code>{browser_host}</code>.</p>
+        <p><b>Tip:</b> HTTP URLs below use the host you connected with (<code>{request.host}</code>).</p>
+        <p><b>Tip:</b> RTSP URLs use <code>{rtsp_host}</code> (set <code>--advertise-host</code> to override).</p>
   <table>
     <thead>
             <tr><th>Cam</th><th>Snapshot</th><th>MJPEG</th><th>Snapshot URL</th><th>MJPEG URL</th><th>RTSP H.264</th><th>RTSP H.265</th></tr>

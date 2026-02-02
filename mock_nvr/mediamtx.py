@@ -35,7 +35,7 @@ logStructured: no
 
 rtsp: yes
 rtspAddress: {bind_host}:{port}
-rtspTransports: [tcp]
+rtspTransports: [tcp, udp]
 
 rtmp: no
 hls: no
