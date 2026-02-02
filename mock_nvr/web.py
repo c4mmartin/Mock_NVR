@@ -88,10 +88,12 @@ async def mjpeg_stream(request: web.Request) -> web.StreamResponse:
     await resp.prepare(request)
 
     frame_interval = 1.0 / max(1, state.cameras[cam_id].cfg.fps)
+    frames_sent = 0
 
     try:
         while True:
             jpg = await state.cameras[cam_id].get_jpeg()
+            frames_sent += 1
             await resp.write(
                 (
                     f"--{boundary}\r\n"
@@ -102,11 +104,13 @@ async def mjpeg_stream(request: web.Request) -> web.StreamResponse:
             await resp.write(jpg)
             await resp.write(b"\r\n")
 
-            # Backpressure / flush (aiohttp API may vary by version).
-            try:
-                await resp.drain()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            if frames_sent == 1 or frames_sent % 30 == 0:
+                get_logger().info(
+                    "http_mjpeg_frame",
+                    cam_id=cam_id,
+                    frames_sent=frames_sent,
+                    jpeg_bytes=len(jpg),
+                )
 
             await asyncio.sleep(frame_interval)
     except asyncio.CancelledError:
@@ -167,9 +171,11 @@ async def index(request: web.Request) -> web.Response:
     for cam_id in sorted(state.cameras.keys()):
         snap_rel = f"/cam/{cam_id}/snapshot.jpg"
         mjpeg_rel = f"/cam/{cam_id}/mjpeg"
+        view_rel = f"/cam/{cam_id}"
         rows.append(
             f"<tr>"
             f"<td>{cam_id}</td>"
+            f"<td><a href='{view_rel}'>view</a></td>"
             f"<td><a href='{snap_rel}'>snapshot.jpg</a></td>"
             f"<td><a href='{mjpeg_rel}'>mjpeg</a></td>"
             f"<td><code>{http_base_connected}{snap_rel}</code>"
@@ -204,7 +210,7 @@ async def index(request: web.Request) -> web.Response:
         <p><b>Tip:</b> RTSP URLs use <code>{rtsp_host}</code> (set <code>--advertise-host</code> if you want a specific IP/hostname printed).</p>
   <table>
     <thead>
-            <tr><th>Cam</th><th>Snapshot</th><th>MJPEG</th><th>Snapshot URL</th><th>MJPEG URL</th><th>RTSP H.264</th><th>RTSP H.265</th></tr>
+            <tr><th>Cam</th><th>View</th><th>Snapshot</th><th>MJPEG</th><th>Snapshot URL</th><th>MJPEG URL</th><th>RTSP H.264</th><th>RTSP H.265</th></tr>
     </thead>
     <tbody>
       {''.join(rows)}
@@ -216,6 +222,39 @@ async def index(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
+async def cam_view(request: web.Request) -> web.Response:
+        cam_id = int(request.match_info["cam_id"])
+        state: AppState = request.app["state"]
+        if cam_id not in state.cameras:
+                raise web.HTTPNotFound(text="Unknown camera")
+
+        mjpeg_rel = f"/cam/{cam_id}/mjpeg"
+        snap_rel = f"/cam/{cam_id}/snapshot.jpg"
+
+        html = f"""<!doctype html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <title>CAM {cam_id} - mock_nvr</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif; padding: 24px; }}
+        img {{ max-width: 100%; height: auto; border: 1px solid #333; }}
+        code {{ background: #f0f0f0; padding: 2px 6px; border-radius: 6px; }}
+    </style>
+</head>
+<body>
+    <h1>CAM {cam_id}</h1>
+    <p>MJPEG: <code>{mjpeg_rel}</code></p>
+    <p>Snapshot: <code>{snap_rel}</code></p>
+    <p><a href='/'>Back</a></p>
+    <img src='{mjpeg_rel}' alt='mjpeg cam {cam_id}' />
+</body>
+</html>"""
+
+        return web.Response(text=html, content_type="text/html")
+
+
 def build_app(state: AppState) -> web.Application:
     app = web.Application()
     app["state"] = state
@@ -223,6 +262,7 @@ def build_app(state: AppState) -> web.Application:
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/stats", stats)
     app.router.add_get("/", index)
+    app.router.add_get("/cam/{cam_id:\\d+}", cam_view)
     app.router.add_get("/cam/{cam_id:\\d+}/snapshot.jpg", snapshot)
     app.router.add_get("/cam/{cam_id:\\d+}/mjpeg", mjpeg_stream)
 
