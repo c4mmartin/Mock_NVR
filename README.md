@@ -20,10 +20,30 @@ The image changes every few seconds:
 ## Requirements
 
 - Python 3.10+
-- `ffmpeg` available on PATH
+- `ffmpeg` available on PATH (required)
   - macOS (Homebrew): `brew install ffmpeg`
+  - Linux
+    - Debian/Ubuntu: `sudo apt-get update && sudo apt-get install -y ffmpeg`
+    - Fedora: `sudo dnf install -y ffmpeg`
+    - Arch: `sudo pacman -S --needed ffmpeg`
+  - Windows
+    - Winget: `winget install Gyan.FFmpeg`
+    - Chocolatey: `choco install ffmpeg`
+    - Verify in a new terminal: `ffmpeg -version`
 - RTSP backend: `mediamtx` (recommended)
+  - Note: RTSP is disabled if MediaMTX is missing and you don't provide an external RTSP server.
   - macOS (Homebrew): `brew install mediamtx`
+  - Linux
+    - Arch (if packaged): `sudo pacman -S --needed mediamtx`
+    - Otherwise: download a static binary from <https://github.com/bluenviron/mediamtx/releases> and put it on PATH
+  - Windows
+    - Download from <https://github.com/bluenviron/mediamtx/releases> and put `mediamtx.exe` on PATH
+
+Verify everything quickly:
+
+```bash
+python3 scripts/mock-nvr.py doctor
+```
 
 ## Setup
 
