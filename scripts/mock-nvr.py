@@ -31,6 +31,7 @@ def _ensure_venv(root: Path) -> Path:
     if vpy.exists():
         return vpy
 
+    print("mock_nvr: creating .venv (first run) ...")
     venv_dir.mkdir(parents=True, exist_ok=True)
     builder = venv.EnvBuilder(with_pip=True, clear=False, upgrade=False)
     builder.create(str(venv_dir))
@@ -52,10 +53,22 @@ def _ensure_deps(root: Path, vpy: Path) -> None:
     wanted = _requirements_hash(req)
     current = marker.read_text().strip() if marker.exists() else ""
     if current == wanted:
+        # Keep this quiet by default; most runs proceed straight into running the app.
         return
 
-    print("mock_nvr: installing Python deps into .venv ...")
-    rc = _run([str(vpy), "-m", "pip", "install", "-r", str(req)], cwd=root)
+    print("mock_nvr: installing Python deps into .venv (may take a minute) ...")
+    rc = _run(
+        [
+            str(vpy),
+            "-m",
+            "pip",
+            "--disable-pip-version-check",
+            "install",
+            "-r",
+            str(req),
+        ],
+        cwd=root,
+    )
     if rc != 0:
         raise SystemExit(rc)
     marker.write_text(wanted)

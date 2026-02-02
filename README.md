@@ -36,7 +36,7 @@ pip install -r requirements.txt
 Cross-platform bootstrap (recommended: creates a local `.venv` and installs deps; no global installs needed):
 
 ```bash
-python scripts/bootstrap.py
+python3 scripts/bootstrap.py
 ```
 
 Windows convenience:
@@ -83,7 +83,7 @@ On Windows (no activation needed):
 Cross-platform option (works anywhere you have Python):
 
 ```bash
-python scripts/mock-nvr.py --cameras 4 --http-port 8080 --rtsp-port 8554
+python3 scripts/mock-nvr.py --cameras 4 --http-port 8080 --rtsp-port 8554
 ```
 
 ## Doctor / troubleshooting
@@ -91,7 +91,7 @@ python scripts/mock-nvr.py --cameras 4 --http-port 8080 --rtsp-port 8554
 Run a quick environment check (Python version, ffmpeg, ports):
 
 ```bash
-python scripts/mock-nvr.py doctor
+python3 scripts/mock-nvr.py doctor
 ```
 
 ## Firewall / opening ports
@@ -101,14 +101,14 @@ If you want other machines to reach this host (LAN/WAN), you may need to allow i
 This repo includes a helper that prints OS-specific commands (and can optionally run them with `--apply --yes`):
 
 ```bash
-python scripts/mock-nvr.py firewall open --http-port 8080 --rtsp-port 8554 --supervisor-http-port 8090
-python scripts/mock-nvr.py firewall close --http-port 8080 --rtsp-port 8554 --supervisor-http-port 8090
+python3 scripts/mock-nvr.py firewall open --http-port 8080 --rtsp-port 8554 --supervisor-http-port 8090
+python3 scripts/mock-nvr.py firewall close --http-port 8080 --rtsp-port 8554 --supervisor-http-port 8090
 ```
 
 If you’re using supervisor mode and want to expose worker HTTP ports too:
 
 ```bash
-python scripts/mock-nvr.py firewall open --workers 2 --worker-http-port-base 8100
+python3 scripts/mock-nvr.py firewall open --workers 2 --worker-http-port-base 8100
 ```
 
 Notes:
@@ -122,8 +122,8 @@ Notes:
 Remove the local venv (and optionally logs):
 
 ```bash
-python scripts/uninstall.py --yes
-python scripts/uninstall.py --yes --remove-logs
+python3 scripts/uninstall.py --yes
+python3 scripts/uninstall.py --yes --remove-logs
 ```
 
 Windows convenience:

@@ -1,9 +1,11 @@
 # Copilot instructions for mock_nvr
 
 ## Quick workflows (copy/paste)
-- One-command run (auto-creates `.venv` + installs deps): `python scripts/mock-nvr.py --cameras 4 --http-port 8080 --rtsp-port 8554`
+- One-command run (auto-creates `.venv` + installs deps): `python3 scripts/mock-nvr.py --cameras 4 --http-port 8080 --rtsp-port 8554`
+- macOS/Linux convenience wrapper: `scripts/mock-nvr --cameras 4 --http-port 8080 --rtsp-port 8554`
+- Windows convenience wrappers: `scripts\mock-nvr.cmd ...` or `scripts\mock-nvr.ps1 ...`
 - Bootstrap local venv + deps (explicit): `python scripts/bootstrap.py`
-- Environment sanity check: `python scripts/mock-nvr.py doctor`
+- Environment sanity check: `python3 scripts/mock-nvr.py doctor`
 - Run single-process (default): `python -m mock_nvr --cameras 4 --http-port 8080 --rtsp-port 8554` (assumes deps already installed)
 - Local-only: `python -m mock_nvr run --bind-host 127.0.0.1 --advertise-host 127.0.0.1 ...`
 - Supervisor + workers: `python -m mock_nvr supervise --cameras 8 --workers 2 --supervisor-http-port 8090 --worker-http-port-base 8100 ...`
