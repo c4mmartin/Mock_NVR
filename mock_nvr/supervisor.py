@@ -37,6 +37,13 @@ class Supervisor:
         width: int,
         height: int,
         fps: int,
+        mjpeg_fps: float,
+        rtsp_tcp_only: bool,
+        rtsp_bitrate_kbps: int,
+        rtsp_codecs: str,
+        rtsp_gop_seconds: float,
+        rtsp_h264_profile: str,
+        rtsp_h264_level: str | None,
         bg_change_seconds: float,
         move_step: int,
         start_mediamtx_enabled: bool,
@@ -57,6 +64,13 @@ class Supervisor:
         self.width = width
         self.height = height
         self.fps = fps
+        self.mjpeg_fps = mjpeg_fps
+        self.rtsp_tcp_only = rtsp_tcp_only
+        self.rtsp_bitrate_kbps = rtsp_bitrate_kbps
+        self.rtsp_codecs = rtsp_codecs
+        self.rtsp_gop_seconds = rtsp_gop_seconds
+        self.rtsp_h264_profile = rtsp_h264_profile
+        self.rtsp_h264_level = rtsp_h264_level
         self.bg_change_seconds = bg_change_seconds
         self.move_step = move_step
         self.start_mediamtx_enabled = start_mediamtx_enabled
@@ -123,6 +137,16 @@ class Supervisor:
             str(self.height),
             "--fps",
             str(self.fps),
+            "--mjpeg-fps",
+            str(self.mjpeg_fps),
+            "--rtsp-bitrate-kbps",
+            str(self.rtsp_bitrate_kbps),
+            "--rtsp-codecs",
+            str(self.rtsp_codecs),
+            "--rtsp-gop-seconds",
+            str(self.rtsp_gop_seconds),
+            "--rtsp-h264-profile",
+            str(self.rtsp_h264_profile),
             "--bg-change-seconds",
             str(self.bg_change_seconds),
             "--move-step",
@@ -138,6 +162,12 @@ class Supervisor:
             "--no-start-mediamtx",
         ]
 
+        if self.rtsp_tcp_only:
+            cmd.append("--rtsp-tcp-only")
+
+        if self.rtsp_h264_level:
+            cmd.extend(["--rtsp-h264-level", str(self.rtsp_h264_level)])
+
         return subprocess.Popen(cmd)
 
     async def start(self) -> int:
@@ -150,7 +180,12 @@ class Supervisor:
                 log.warning("mediamtx_not_found_rtsp_disabled", hint="brew install mediamtx")
             else:
                 try:
-                    self.mediamtx_proc, _ = start_mediamtx(self.rtsp_port, bind_host=self.bind_host)
+                    transports = ["tcp"] if self.rtsp_tcp_only else ["tcp", "udp"]
+                    self.mediamtx_proc, _ = start_mediamtx(
+                        self.rtsp_port,
+                        bind_host=self.bind_host,
+                        rtsp_transports=transports,
+                    )
                 except Exception as e:
                     log.warning("mediamtx_start_failed", error=str(e))
                     self.mediamtx_proc = None
@@ -284,7 +319,11 @@ class Supervisor:
         )
 
         base = f"http://127.0.0.1:{spec.http_port}"
-        return await self._proxy_bytes(url=f"{base}/cam/{cam_id}/snapshot.jpg", content_type="image/jpeg")
+        qs = f"?{request.query_string}" if request.query_string else ""
+        return await self._proxy_bytes(
+            url=f"{base}/cam/{cam_id}/snapshot.jpg{qs}",
+            content_type="image/jpeg",
+        )
 
     async def handle_mjpeg_proxy(self, request: web.Request) -> web.StreamResponse:
         cam_id = int(request.match_info["cam_id"])
@@ -300,7 +339,8 @@ class Supervisor:
             host=request.host,
         )
 
-        upstream = f"http://127.0.0.1:{spec.http_port}/cam/{cam_id}/mjpeg"
+        qs = f"?{request.query_string}" if request.query_string else ""
+        upstream = f"http://127.0.0.1:{spec.http_port}/cam/{cam_id}/mjpeg{qs}"
 
         resp = web.StreamResponse(
             status=200,

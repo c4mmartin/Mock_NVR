@@ -25,6 +25,8 @@ class AppState:
     rtsp_backend_proc: Optional[subprocess.Popen] = None
     http_port: int = 0
     advertise_host: str = "IPADDR"
+    # Default MJPEG send rate (frames per second). 0 means: follow per-camera cfg.fps.
+    mjpeg_fps: float = 0.0
 
 
 # Only used for typing; avoids circular imports at runtime.

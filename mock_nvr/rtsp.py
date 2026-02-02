@@ -12,13 +12,30 @@ from .models import AppState
 
 
 class RtspStreamer:
-    def __init__(self, *, name: str, url: str, width: int, height: int, fps: int, codec: str):
+    def __init__(
+        self,
+        *,
+        name: str,
+        url: str,
+        width: int,
+        height: int,
+        fps: int,
+        codec: str,
+        bitrate_kbps: int = 0,
+        gop_seconds: float = 2.0,
+        h264_profile: str = "baseline",
+        h264_level: str | None = None,
+    ):
         self.name = name
         self.url = url
         self.width = width
         self.height = height
         self.fps = fps
         self.codec = codec
+        self.bitrate_kbps = bitrate_kbps
+        self.gop_seconds = gop_seconds
+        self.h264_profile = h264_profile
+        self.h264_level = h264_level
         self.proc: Optional[subprocess.Popen] = None
         self._log_task: Optional[asyncio.Task] = None
 
@@ -34,6 +51,39 @@ class RtspStreamer:
         vcodec = {"h264": "libx264", "h265": "libx265", "hevc": "libx265"}.get(
             self.codec, self.codec
         )
+
+        # GOP/keyframe interval. Keep it bounded for decoder recovery.
+        gop_frames = max(1, int(round(max(0.1, self.gop_seconds) * max(1, self.fps))))
+
+        # Optional bitrate cap to reduce network load.
+        bitrate_args: list[str] = []
+        if self.bitrate_kbps and self.bitrate_kbps > 0:
+            b = int(self.bitrate_kbps)
+            bitrate_args = [
+                "-b:v",
+                f"{b}k",
+                "-maxrate",
+                f"{b}k",
+                "-bufsize",
+                f"{max(2 * b, 1)}k",
+            ]
+
+        # Some decoders (notably embedded/smart TV stacks) behave better when SPS/PPS
+        # are repeated with keyframes.
+        codec_params: list[str] = []
+        if vcodec == "libx264":
+            codec_params = [
+                "-profile:v",
+                self.h264_profile,
+                *( ["-level:v", str(self.h264_level)] if self.h264_level else [] ),
+                "-x264-params",
+                f"repeat-headers=1:keyint={gop_frames}:min-keyint={gop_frames}:scenecut=0",
+            ]
+        elif vcodec == "libx265":
+            codec_params = [
+                "-x265-params",
+                f"repeat-headers=1:keyint={gop_frames}:min-keyint={gop_frames}:scenecut=0",
+            ]
 
         cmd = [
             "ffmpeg",
@@ -57,12 +107,14 @@ class RtspStreamer:
             "ultrafast",
             "-tune",
             "zerolatency",
+            *bitrate_args,
+            *codec_params,
             "-pix_fmt",
             "yuv420p",
             "-g",
-            str(self.fps * 2),
+            str(gop_frames),
             "-keyint_min",
-            str(self.fps * 2),
+            str(gop_frames),
             "-f",
             "rtsp",
             "-rtsp_transport",

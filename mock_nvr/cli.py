@@ -66,6 +66,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Do not auto-start MediamTX (run it separately if you want RTSP)",
     )
     parser.add_argument(
+        "--rtsp-tcp-only",
+        action="store_true",
+        help="When auto-starting MediamTX, only allow RTSP-over-TCP for clients (often more stable on Wi-Fi/smart TVs)",
+    )
+    parser.add_argument(
         "--advertise-host",
         type=str,
         default="IPADDR",
@@ -74,6 +79,45 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--fps", type=int, default=10)
+    parser.add_argument(
+        "--mjpeg-fps",
+        type=float,
+        default=0.0,
+        help="MJPEG stream send rate (frames/sec). 0 = follow --fps",
+    )
+
+    # RTSP encoder knobs (primarily for compatibility + bandwidth).
+    parser.add_argument(
+        "--rtsp-bitrate-kbps",
+        type=int,
+        default=0,
+        help="If >0, cap video bitrate for RTSP streams (kbps). Helps reduce network load.",
+    )
+    parser.add_argument(
+        "--rtsp-codecs",
+        type=str,
+        default="h264,h265",
+        help="Comma-separated RTSP codecs to publish: h264, h265 (default: h264,h265). Use 'h264' to cut bandwidth.",
+    )
+    parser.add_argument(
+        "--rtsp-gop-seconds",
+        type=float,
+        default=2.0,
+        help="Keyframe interval in seconds for RTSP streams (default: 2.0)",
+    )
+    parser.add_argument(
+        "--rtsp-h264-profile",
+        type=str,
+        default="baseline",
+        choices=("baseline", "main", "high"),
+        help="H.264 profile used for RTSP (default: baseline for broad compatibility)",
+    )
+    parser.add_argument(
+        "--rtsp-h264-level",
+        type=str,
+        default="",
+        help="Optional H.264 level (e.g. 3.1, 4.0). Some embedded decoders require this.",
+    )
     parser.add_argument("--bg-change-seconds", type=float, default=3.0)
     parser.add_argument("--move-step", type=int, default=18)
 
@@ -382,9 +426,16 @@ async def run(args: argparse.Namespace) -> int:
     )
 
     if enable_rtsp_publishers:
+        codecs_raw = (args.rtsp_codecs or "").strip()
+        selected = [c.strip().lower() for c in codecs_raw.split(",") if c.strip()]
+        allowed = {"h264", "h265"}
+        selected_codecs = [c for c in selected if c in allowed]
+        if not selected_codecs:
+            raise SystemExit("--rtsp-codecs must include at least one of: h264,h265")
+
         # Publish to localhost RTSP server; clients connect to the external address/port.
         for cam_id in cameras.keys():
-            for codec in ("h264", "h265"):
+            for codec in selected_codecs:
                 path = f"cam{cam_id}_{codec}"
                 url = f"rtsp://{args.rtsp_publish_host}:{args.rtsp_port}/{path}"
                 key = f"{cam_id}:{codec}"
@@ -395,6 +446,10 @@ async def run(args: argparse.Namespace) -> int:
                     height=args.height,
                     fps=args.fps,
                     codec=codec,
+                    bitrate_kbps=args.rtsp_bitrate_kbps,
+                    gop_seconds=args.rtsp_gop_seconds,
+                    h264_profile=args.rtsp_h264_profile,
+                    h264_level=(args.rtsp_h264_level or "").strip() or None,
                 )
 
     state = AppState(
@@ -404,6 +459,7 @@ async def run(args: argparse.Namespace) -> int:
         stop_event=asyncio.Event(),
         http_port=args.http_port,
         advertise_host=args.advertise_host,
+        mjpeg_fps=args.mjpeg_fps,
     )
 
     # Start background frame render loops so HTTP/RTSP are reading cached frames.
@@ -418,7 +474,12 @@ async def run(args: argparse.Namespace) -> int:
 
     if mt_exe is not None and not args.no_start_mediamtx:
         try:
-            state.rtsp_backend_proc, _ = start_mediamtx(args.rtsp_port, bind_host=args.bind_host)
+            transports = ["tcp"] if args.rtsp_tcp_only else ["tcp", "udp"]
+            state.rtsp_backend_proc, _ = start_mediamtx(
+                args.rtsp_port,
+                bind_host=args.bind_host,
+                rtsp_transports=transports,
+            )
         except Exception as e:
             log.warning("mediamtx_start_failed", error=str(e))
             state.rtsp_backend_proc = None
@@ -521,6 +582,13 @@ def main(argv: list[str] | None = None) -> int:
             width=args.width,
             height=args.height,
             fps=args.fps,
+            mjpeg_fps=args.mjpeg_fps,
+            rtsp_tcp_only=bool(args.rtsp_tcp_only),
+            rtsp_bitrate_kbps=int(args.rtsp_bitrate_kbps),
+            rtsp_codecs=str(args.rtsp_codecs),
+            rtsp_gop_seconds=float(args.rtsp_gop_seconds),
+            rtsp_h264_profile=str(args.rtsp_h264_profile),
+            rtsp_h264_level=(args.rtsp_h264_level or "").strip() or None,
             bg_change_seconds=args.bg_change_seconds,
             move_step=args.move_step,
             start_mediamtx_enabled=bool(args.start_mediamtx) and (not args.no_start_mediamtx),

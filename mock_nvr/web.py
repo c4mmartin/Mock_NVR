@@ -38,6 +38,28 @@ def _split_host_port(authority: str) -> tuple[str, str | None]:
     return authority, None
 
 
+def _clamp(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
+
+
+def _parse_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _parse_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
 async def healthz(_: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
@@ -72,6 +94,19 @@ async def mjpeg_stream(request: web.Request) -> web.StreamResponse:
     if cam_id not in state.cameras:
         raise web.HTTPNotFound(text="Unknown camera")
 
+    # Per-request tuning knobs (handy for smart TVs / constrained clients).
+    # - fps: frames/sec
+    # - interval_ms: explicit cadence override
+    # - quality: JPEG quality (1..95)
+    q = request.rel_url.query
+    quality = _parse_int(q.get("quality"))
+    if quality is None:
+        quality = 80
+    quality = int(_clamp(float(quality), 1.0, 95.0))
+
+    interval_ms = _parse_int(q.get("interval_ms"))
+    fps_override = _parse_float(q.get("fps"))
+
     boundary = "frame"
     resp = web.StreamResponse(
         status=200,
@@ -87,12 +122,21 @@ async def mjpeg_stream(request: web.Request) -> web.StreamResponse:
     )
     await resp.prepare(request)
 
-    frame_interval = 1.0 / max(1, state.cameras[cam_id].cfg.fps)
+    if interval_ms is not None and interval_ms > 0:
+        frame_interval = _clamp(interval_ms / 1000.0, 0.05, 60.0)
+    else:
+        default_fps = getattr(state, "mjpeg_fps", 0.0) or 0.0
+        if default_fps <= 0:
+            default_fps = float(state.cameras[cam_id].cfg.fps)
+
+        fps = fps_override if (fps_override is not None and fps_override > 0) else default_fps
+        fps = _clamp(float(fps), 0.1, 60.0)
+        frame_interval = 1.0 / fps
     frames_sent = 0
 
     try:
         while True:
-            jpg = await state.cameras[cam_id].get_jpeg()
+            jpg = await state.cameras[cam_id].get_jpeg(quality=quality)
             frames_sent += 1
             await resp.write(
                 (
@@ -143,7 +187,13 @@ async def snapshot(request: web.Request) -> web.Response:
     if cam_id not in state.cameras:
         raise web.HTTPNotFound(text="Unknown camera")
 
-    jpg = await state.cameras[cam_id].get_jpeg()
+    q = request.rel_url.query
+    quality = _parse_int(q.get("quality"))
+    if quality is None:
+        quality = 80
+    quality = int(_clamp(float(quality), 1.0, 95.0))
+
+    jpg = await state.cameras[cam_id].get_jpeg(quality=quality)
     return web.Response(body=jpg, content_type="image/jpeg")
 
 
@@ -172,6 +222,9 @@ async def index(request: web.Request) -> web.Response:
         snap_rel = f"/cam/{cam_id}/snapshot.jpg"
         mjpeg_rel = f"/cam/{cam_id}/mjpeg"
         view_rel = f"/cam/{cam_id}"
+        have_h264 = bool(state.rtsp_streamers) and (f"{cam_id}:h264" in state.rtsp_streamers)
+        have_h265 = bool(state.rtsp_streamers) and (f"{cam_id}:h265" in state.rtsp_streamers)
+
         rows.append(
             f"<tr>"
             f"<td>{cam_id}</td>"
@@ -184,8 +237,16 @@ async def index(request: web.Request) -> web.Response:
             f"<td><code>{http_base_connected}{mjpeg_rel}</code>"
             + (f"<br/><small>adv: <code>{http_base_advertised}{mjpeg_rel}</code></small>" if http_base_advertised else "")
             + "</td>"
-            f"<td><code>rtsp://{rtsp_host}:{state.rtsp_port}/cam{cam_id}_h264</code></td>"
-            f"<td><code>rtsp://{rtsp_host}:{state.rtsp_port}/cam{cam_id}_h265</code></td>"
+            + (
+                f"<td><code>rtsp://{rtsp_host}:{state.rtsp_port}/cam{cam_id}_h264</code></td>"
+                if have_h264
+                else "<td><em>disabled</em></td>"
+            )
+            + (
+                f"<td><code>rtsp://{rtsp_host}:{state.rtsp_port}/cam{cam_id}_h265</code></td>"
+                if have_h265
+                else "<td><em>disabled</em></td>"
+            )
             f"</tr>"
         )
 
@@ -231,6 +292,20 @@ async def cam_view(request: web.Request) -> web.Response:
         mjpeg_rel = f"/cam/{cam_id}/mjpeg"
         snap_rel = f"/cam/{cam_id}/snapshot.jpg"
 
+        q = request.rel_url.query
+        fps = q.get("fps") or ""
+        interval_ms = q.get("interval_ms") or ""
+        quality = q.get("quality") or "80"
+
+        params = []
+        if fps:
+            params.append(f"fps={fps}")
+        if interval_ms:
+            params.append(f"interval_ms={interval_ms}")
+        if quality:
+            params.append(f"quality={quality}")
+        qs = ("?" + "&".join(params)) if params else ""
+
         html = f"""<!doctype html>
 <html>
 <head>
@@ -241,14 +316,22 @@ async def cam_view(request: web.Request) -> web.Response:
         body {{ font-family: -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif; padding: 24px; }}
         img {{ max-width: 100%; height: auto; border: 1px solid #333; }}
         code {{ background: #f0f0f0; padding: 2px 6px; border-radius: 6px; }}
+        label {{ display: inline-block; margin-right: 12px; }}
+        input {{ width: 110px; }}
     </style>
 </head>
 <body>
     <h1>CAM {cam_id}</h1>
-    <p>MJPEG: <code>{mjpeg_rel}</code></p>
-    <p>Snapshot: <code>{snap_rel}</code></p>
+    <p>MJPEG: <code>{mjpeg_rel}</code> (supports <code>?fps=</code>, <code>?interval_ms=</code>, <code>?quality=</code>)</p>
+    <p>Snapshot: <code>{snap_rel}</code> (supports <code>?quality=</code>)</p>
+    <form method='get' action=''>
+        <label>fps <input name='fps' value='{fps}' placeholder='e.g. 1 or 0.5' /></label>
+        <label>interval_ms <input name='interval_ms' value='{interval_ms}' placeholder='e.g. 1000' /></label>
+        <label>quality <input name='quality' value='{quality}' /></label>
+        <button type='submit'>Apply</button>
+    </form>
     <p><a href='/'>Back</a></p>
-    <img src='{mjpeg_rel}' alt='mjpeg cam {cam_id}' />
+    <img src='{mjpeg_rel}{qs}' alt='mjpeg cam {cam_id}' />
 </body>
 </html>"""
 

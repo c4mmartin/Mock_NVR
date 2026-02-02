@@ -11,6 +11,22 @@ Per camera:
 - RTSP (H.264): `rtsp://<host>:<rtsp_port>/cam<id>_h264`
 - RTSP (H.265): `rtsp://<host>:<rtsp_port>/cam<id>_h265`
 
+MJPEG tuning (useful for constrained clients like some smart TVs):
+
+- Slow MJPEG down: `http://<host>:<http_port>/cam/<id>/mjpeg?fps=1` (or `fps=0.5`)
+- Explicit cadence: `http://<host>:<http_port>/cam/<id>/mjpeg?interval_ms=1000`
+- Increase JPEG quality: `http://<host>:<http_port>/cam/<id>/mjpeg?quality=90`
+
+You can also set a default MJPEG rate for all cameras with `--mjpeg-fps`.
+
+RTSP stability tips (H.264/H.265):
+
+- If a client shows tearing/garbling, prefer RTSP-over-TCP (more resilient to packet loss than UDP on Wi‑Fi): run with `--rtsp-tcp-only` (only affects auto-started MediaMTX).
+- If you only need one stream type, publish only H.264 to cut bandwidth roughly in half: `--rtsp-codecs h264`.
+- If the network is getting saturated, cap bitrate: `--rtsp-bitrate-kbps 800` (and/or lower `--fps`, `--width`, `--height`).
+- For faster decoder recovery on loss, use a shorter keyframe interval: `--rtsp-gop-seconds 1.0`.
+- If an embedded decoder is picky, try setting an explicit H.264 level: `--rtsp-h264-level 4.0`.
+
 The image changes every few seconds:
 
 - background color randomly changes
@@ -181,6 +197,10 @@ Test snapshot:
 Test MJPEG:
 
 - `open http://localhost:8080/cam/1/mjpeg`
+
+If a client renders MJPEG with artifacts, try a slower rate and higher quality:
+
+- `open 'http://localhost:8080/cam/1/mjpeg?fps=1&quality=90'`
 
 Test RTSP:
 
